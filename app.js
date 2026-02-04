@@ -5,7 +5,8 @@ var cookieParser = require('cookie-parser');
 var logger = require('morgan');
 
 var indexRouter = require('./routes/index');
-var usersRouter = require('./routes/users');
+var liveRouter = require('./routes/live');
+var archiveRouter = require('./routes/archive');
 
 var app = express();
 
@@ -20,7 +21,8 @@ app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.use('/', indexRouter);
-app.use('/users', usersRouter);
+app.use('/meteo/v1/live', liveRouter);
+app.use('/meteo/v1/archive', archiveRouter);
 
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {
@@ -35,7 +37,11 @@ app.use(function(err, req, res, next) {
 
   // render the error page
   res.status(err.status || 500);
-  res.render('error');
+    res.render('error', {
+    title: 'Error',  // Add this line
+    message: err.message,
+    error: err
+  });
 });
 
 module.exports = app;

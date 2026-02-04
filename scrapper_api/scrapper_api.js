@@ -1,5 +1,28 @@
-const { MongoClient } = require('mongodb');
-const fs = require('node:fs/promises');
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
+
+const {MongoClient} = require('mongodb');
+import fs from 'node:fs/promises';
+import chokidar from 'chokidar';
+
+const urlMockData = "/dev/shm/sensors";
+const urlRealData = "";
+
+
+const MONGO_HOST = process.env.MONGO_HOST || 'localhost';
+const urlDb = `mongodb://${MONGO_HOST}:27017`;
+const dbName = 'meteo';
+
+// Watcher pour regarder les fichiers iù sont mis les résultats des sondes
+function initializeWatcher(mode) {
+    var url;
+    if (mode == "mock") { url = urlMockData}
+    else { url = urlRealData};
+
+    const watcher = chokidar.watch(url);
+
+    return watcher
+}
 
 /*Pour FakeSond
     temperature => measure[0]
@@ -21,7 +44,7 @@ const fakeSondKeys = {
     "wind_speed_avg" : 5,
     "wind_speed_max" : 6,
     "wind_speed_min" : 7
-}
+};
 
 //
 async function loadingFile(path) {
@@ -32,13 +55,11 @@ async function loadingFile(path) {
     catch (err) {
         return err;
     }
-}
+};
 
-const url = 'mongodb://localhost:27017';
-const dbName = 'meteo';
-
+// Setup de la database
 async function setUpDatabase() {
-    const client = new MongoClient(url);
+    const client = new MongoClient(urlDb);
     try {
         await client.connect();
         const db = client.db(dbName);
@@ -61,9 +82,9 @@ async function setUpDatabase() {
 };
 
 
-
+// Insertion de la donnée d'un fichiers dans la bdd
 async function insertData(path) {
-    const client = new MongoClient(url);
+    const client = new MongoClient(urlDb);
     // Pick the file
     const file = await loadingFile(path);
 
@@ -74,15 +95,15 @@ async function insertData(path) {
         //pour chaque variable, on insère dans la collection correspondante
         const collection = db.collection(dataType);
         const insertResult = await collection.insertOne(file.measure[fakeSondKeys[dataType]]);
-        // console.log('Inserted documents =>', insertResult);
+        console.log('Inserted documents =>', insertResult);
     }
 
     await client.close()
     return "done";
-}
+};
 
-async function showData(){
-    const client = new MongoClient(url);
+async function showData() {
+    const client = new MongoClient(urlDb);
     try {
         await client.connect();
         const db = client.db(dbName);
@@ -96,8 +117,17 @@ async function showData(){
     } finally {
         await client.close();
     }
-}
+};
 
-setUpDatabase();
-insertData("/dev/shm/sensors");
-showData();
+
+function launchScrapper(mode="mock") {
+    setUpDatabase();
+    const watcher = initializeWatcher(mode);
+    watcher
+        .on('change', (path) => {
+            console.log("change on file")
+            insertData(path)
+        })
+};
+
+launchScrapper("mock");

@@ -1,0 +1,30 @@
+services:
+  mongodb:
+    image: mongo:latest
+    container_name: meteo-mongodb
+    ports:
+      - "27017:27017"
+    networks:
+      - meteo-network
+    volumes:
+      - mongodb_data:/data/db
+
+  scrapper:
+    build:
+      context: .
+      dockerfile: Dockerfile.scrapper
+    container_name: meteo-scrapper
+    environment:
+      - MONGO_HOST=mongodb
+    networks:
+      - meteo-network
+    volumes:
+      - /dev/shm/sensors:/dev/shm/sensors
+    restart: unless-stopped
+
+networks:
+  meteo-network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
