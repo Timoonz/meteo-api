@@ -3,43 +3,89 @@ var router = express.Router();
 const {MongoClient} = require('mongodb');
 
 const MONGO_HOST = process.env.MONGO_HOST || 'localhost';
-const urlDb = `mongodb://${MONGO_HOST}:27017`;
-const dbName = 'meteo';
+const URLDB = `mongodb://${MONGO_HOST}:27017`;
+const DBNAME = 'meteo';
 
 function hasValidParameters(params) {
-    validParameters = ['temperature', 'humidity', 'pressure', 'rain', 'wind_heading', 'wind_speed_avg', 'wind_speed_max', 'wind_speed_min'];
+    validParameters = ['temperature', 'humidity', 'pressure', 'rain', 'wind_heading', 'wind_speed_avg', 'wind_speed_max', 'wind_speed_min', 'luminosity'];
     return params.every((param) => validParameters.includes(param));
 }
 
 async function loadData(start, end, params) {
-    const client = new MongoClient(urlDb);
+    const client = new MongoClient(URLDB);
     try {
         await client.connect();
-        const db = client.db(dbName);
+        const db = client.db(DBNAME);
+        const collection = db.collection("meteo");
 
-        results = {};
+        // Convertir les timestamps en ISO8601 strings pour la comparaison
+        const startDate = new Date(start * 1000).toISOString();
+        const endDate = new Date(end * 1000).toISOString();
+
+        console.log('Searching from', startDate, 'to', endDate);
+
+        const data = await collection.find({
+            date: { 
+                $gte: startDate, 
+                $lte: endDate 
+            }
+        }).sort({ date: 1 }).toArray();
+
+        console.log(`Found ${data.length} documents`);
+
+        const results = {};
 
         // Construction de la légende
-        const legend = ["time", "lat", "long"]
+        const legend = ["time", "lat", "long"];
         for (const param of params) {
             legend.push(param);
         }
         results["legend"] = legend;
 
-        // Construction du tableau des unités 
-        const units = ["ISO8601", "°", "°"]
-        for (const param of params) {
-            // on ne prend que le dernier fichier pour construire le tableau des unités
-            const data = await db.collection(param).find().sort({_id: -1}).limit(1).toArray();
-            units.push(data[0].measures.unit);
+        // Construction du tableau des unités
+        const units = ["ISO8601", "°", "°"];
+        
+        // On prend le premier document qui a des données pour extraire les unités
+        if (data.length > 0) {
+            for (const param of params) {
+                if (data[0][param] && data[0][param].unit) {
+                    units.push(data[0][param].unit);
+                } else {
+                    units.push("N/A");
+                }
+            }
+        } else {
+            for (const param of params) {
+                units.push("N/A");
+            }
         }
         results["units"] = units;
 
+        // Construction du tableau de données
         results["data"] = [];
+        for (const doc of data) {
+            const row = [
+                doc.date,           // time
+                doc.lat || 0,       // latitude
+                doc.long || 0       // longitude
+            ];
+            
+            // Ajout des valeurs pour chaque paramètre demandé
+            for (const param of params) {
+                if (doc[param] && doc[param].value !== undefined) {
+                    row.push(doc[param].value);
+                } else {
+                    row.push(null);
+                }
+            }
+            
+            results["data"].push(row);
+        }
 
         return results;
-    }  catch (err) {
-        console.error('Error importing data:', err);
+    } catch (err) {
+        console.error('Error loading data:', err);
+        throw err;
     } finally {
         await client.close();
     }
@@ -48,7 +94,6 @@ async function loadData(start, end, params) {
 // Le routeur pour meteo/v1/archive
 router.get('/', async (req, res) => {
     try {
-        // On check s'il y a un timestamp de début et un timestamp de fin
         if (!req.query.start || !req.query.end) {
             return res.status(400).json({
                 error_code: 400,
@@ -67,10 +112,10 @@ router.get('/', async (req, res) => {
 
         let endTimeStamp;
         if (req.query.end == "now") {
-            end = Math.floor(Date.now() / 1000);
+            endTimeStamp = Math.floor(Date.now() / 1000);
         } else {
             endTimeStamp = parseInt(req.query.end);
-            if (isNaN(startTimeStamp)) {
+            if (isNaN(endTimeStamp)) {
                 return res.status(400).json({
                     error_code: 400,
                     error_message: "Invalid query parameter: 'end' must be a timestamp"
@@ -85,26 +130,25 @@ router.get('/', async (req, res) => {
             })
         }
         
+        const params = req.query.data.split(',').map(m => m.trim());
 
-        // Si un des paramètres passés est faux, on renvoie une erreur
         if (!hasValidParameters(params)) {
             return res.status(400).json({
                 error_code: 400,
-                error_message: "Invalid query parameter"
+                error_message: "Invalid query parameter: valid parameters are temperature, humidity, pressure, rain, wind_heading, wind_speed_avg, wind_speed_max, wind_speed_min, luminosity"
             })
         }
         
-        params = data.split(',').map(m => m.trim());
+        const results = await loadData(startTimeStamp, endTimeStamp, params);
+        return res.json(results);
 
-    }
-
-    catch (error) {
-        res.status(500).json({
+    } catch (error) {
+        console.error('Error in /archive route:', error);
+        return res.status(500).json({
             error_code: 500,
             error_message: "Internal server error"
         })
-    };
+    }
 })
-
 
 module.exports = router;
