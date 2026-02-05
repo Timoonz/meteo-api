@@ -8,7 +8,7 @@ const dbName = 'meteo';
 
 // Pour vérifier si les paramètres passés en arguments sont valides
 function hasValidParameters(params) {
-    validParameters = ['temperature', 'humidity', 'pressure', 'rain', 'wind_heading', 'wind_speed_avg', 'wind_speed_max', 'wind_speed_min'];
+    const validParameters = ['temperature', 'humidity', 'pressure', 'rain', 'wind_heading', 'wind_speed_avg', 'wind_speed_max', 'wind_speed_min', "luminosity"];
     return params.every((param) => validParameters.includes(param));
 }
 
@@ -18,23 +18,35 @@ async function loadData(params) {
     try {
         await client.connect();
         const db = client.db(dbName);
+        const collection = db.collection("meteo");
 
-        const results = {};
+        let results = {
+            "date": null, 
+            "location": null,
+            "measurements": {} 
+        };
+        
 
-        // On se sert du premier fichier pour afficher la date et la location
-        const firstData = await db.collection(params[0]).find().sort({_id: -1}).limit(1).toArray();
-        results["date"] = firstData[0].date;
-        results["location"] = "location";
-        results["measurements"] = {};
+        const firstFile = await collection.find().sort({_id: -1}).limit(1).toArray();
+
+        if (firstFile.length === 0) {
+            throw new Error("No data found in database");
+        }
+
+
+        results.date = firstFile[0].date;
+        results.location = {
+                "lat": firstFile[0].lat,
+                "long": firstFile[0].long
+        };
 
         for (const param of params) {
-            const data = await db.collection(param).find().sort({_id: -1}).limit(1).toArray();
-            const measure = {"unit": data[0].measures.unit, "value": data[0].measures.value};
-            results["measurements"][param] = measure;
+            results["measurements"][param] = firstFile[0][param]
         }
         return results;
     }  catch (err) {
         console.error('Error importing data:', err);
+        throw err;
     } finally {
         await client.close();
     }

@@ -5,13 +5,11 @@ const {MongoClient} = require('mongodb');
 import fs from 'node:fs/promises';
 import chokidar from 'chokidar';
 
-const urlMockData = "/dev/shm/sensors";
-const urlRealData = "/dev/shm/";
-
+const nmea = require('nmea-simple');
 
 const MONGO_HOST = process.env.MONGO_HOST || 'localhost';
-const urlDb = `mongodb://${MONGO_HOST}:27017`;
-const dbName = 'meteo';
+const URLDB = `mongodb://${MONGO_HOST}:27017`;
+const DBNAME = 'meteo';
 
 
 const fakeSondKeys = {
@@ -38,102 +36,85 @@ const realSondKeys = {
     "press": "humidity"
 };
 
-["temp", "hygro", "press"]
-
-async function loadingFile(path) {
+// Fonction pour parser la première ligne du fichier gpsNmea
+function parseGPS(gpsFile) {
+    const lines = gpsFile.split("\n");
+    let lat = null;
+    let long = null;
     try {
-        const data = await fs.readFile(path, { enconding: 'utf8'});
-        return JSON.parse(data);
+        for (const line of lines){
+            if (line.startsWith('$GPGGA')) {
+                const packet = nmea.parseNmeaSentence(line);
+                lat = packet.latitude;
+                long = packet.longitude;
+                break;
+            }
+        }
+        return {"lat": lat, "long": long};
+    } catch(error) {
+        console.error('Error parsing NMEA sentence:', error);
+        return null;
+    }
+}
+
+// Fonction pour load les fichiers
+async function loadingFile(path, isText = false) {
+    try {
+        const data = await fs.readFile(path, { encoding: 'utf8'}); // Fix typo
+        return isText ? data : JSON.parse(data);
     }
     catch (err) {
-        return err;
-    }
-};
-
-// Setup de la database
-async function setUpDatabase() {
-    const client = new MongoClient(urlDb);
-    try {
-        await client.connect();
-        const db = client.db(dbName);
-
-        // On crée une collection par type de données
-        for (const dataType in fakeSondKeys) {
-            // console.log(dataType);
-            await db.createCollection(dataType);
-        }
-        // On crée une collection pour la pluie
-        await db.createCollection("rain");
-        // On crée une collection pour le gps
-        await db.createCollection("gps");
-
-    } catch (err) {
-        console.error('Error setting up database:', err);
-    } finally {
-        // const db = client.db(dbName);
-        // const colls = db.listCollections();
-        // for await (const doc of colls) {
-        //     console.log(doc)
-        // }
-        await client.close();
+        console.error(`Error loading file ${path}:`, err);
+        return null;
     }
 };
 
 
-// Insertion de la donnchokidar.watch(path)ée d'un fichiers dans la bdd
+// Insertion de la donnée d'un fichiers dans la bdd
 async function insertData(path) {
-    const client = new MongoClient(urlDb);
-    const file = await loadingFile(path);
+    const client = new MongoClient(URLDB);
+    const fakeSondfile = await loadingFile("/dev/shm/sensors");
+    const gpsFile = await loadingFile("/dev/shm/gpsNmea", true);
+    const rainFile = await loadingFile("/dev/shm/rainCounter.log");
+    const realSondFile = await loadingFile("/dev/shm/tph.log");
 
     await client.connect();
-    const db = client.db(dbName);
+    const db = client.db(DBNAME);
+    const collection = db.collection("meteo")
 
-    if (path == "/dev/shm/sensors") {
-        console.log("change on fakeSond file");
-        // Pour chaque variable, on insère dans la collection correspondante
-        for (const dataType in fakeSondKeys) {
-            const collection = db.collection(dataType);
-            const insertResult = await collection.insertOne({
-                "date": file.date, 
-                "measures": file.measure[fakeSondKeys[dataType]]
-            });
-            console.log('Inserted measurements =>', insertResult);
-        }
+    // On insère la date
+    const result = {
+        "date": fakeSondfile.date,
     }
-    else if (path == "/dev/shm/gpsNmea") {
-        console.log("change on gps file");
-        const collection = db.collection("gps");
-        const insertResult = await collection.insertOne(file);
-        console.log('Inserted gps position =>', insertResult);
+
+    // On insère les données du gps
+    const gpsCoord = parseGPS(gpsFile);
+    result["lat"] = gpsCoord.lat; //
+    result["long"] = gpsCoord.long; //
+
+    // On insère les données de la vraie sonde
+    for (const dataType in realSondKeys) {
+        result[realSondKeys[dataType]] = {"unit":realSondUnitKeys[dataType], "value": realSondFile[dataType]};
+        console.log(realSondFile)
+    } 
+
+    // On insère les données de la fausse sonde
+    for (const dataType in fakeSondKeys) {
+        result[dataType] = {"unit":fakeSondfile.measure[fakeSondKeys[dataType]].unit, "value":fakeSondfile.measure[fakeSondKeys[dataType]].value}
     }
-    else if (path == "/dev/shm/rainCounter.log") {
-        console.log("change on rainCounter file");
-        const collection = db.collection("rain");
-        const insertResult = await collection.insertOne(file);
-        console.log('Inserted gps position =>', insertResult);
-    }
-    else if (path == "/dev/shm/tph.log") {
-        console.log("change on realSond file");
-        for (const dataType in realSondKeys) {
-            const collection = db.collection(realSondKeys[dataType]);
-            const insertResult = await collection.insertOne({
-                "date": file.date,
-                "measures": {"unit":realSondUnitKeys[dataType], "value": file[dataType]}
-            });
-        }
-        const collection = db.collection("rain");
-        const insertResult = await collection.insertOne(file);
-        console.log('Inserted gps position =>', insertResult);
-    }
+
+    // On insère la pluie
+
+    const insertResult = await collection.insertOne(result);
+    console.log('Inserted file => ', insertResult);
+
 
     await client.close()
     return "done";
 };
 
 
-
-
-function launchScrapper(mode="mock") {
+function launchScrapper() {
     const watcherDev = chokidar.watch("/dev/shm");
     
     watcherDev
