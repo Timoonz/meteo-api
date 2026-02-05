@@ -14,44 +14,32 @@ const urlDb = `mongodb://${MONGO_HOST}:27017`;
 const dbName = 'meteo';
 
 
-/*Pour FakeSond
-    temperature => measure[0]
-    pressure => measure[1]
-    humidity => measure[2]
-    luminosity => measure[3]
-    wind_heading => measure[4]
-    wind_speed_avg => measure[5]
-    wind_speed_max => measure[6]
-    wind_speed_min => measure[7]
-*/
-
 const fakeSondKeys = {
-    "temperature" :0,
-    "pressure" : 1,
-    "humidity" : 2,
-    "luminosity" : 3,
-    "wind_heading" : 4,
-    "wind_speed_avg" : 5,
-    "wind_speed_max" : 6,
-    "wind_speed_min" : 7
+    // "temperature" :0, //measure[0] PAS A PRENDRE
+    // "pressure" : 1, //measure[1] PAS A PRENDRE
+    // "humidity" : 2, //measure[2] PAS A PRENDRE
+    "luminosity" : 3, //measure[3] A UTILISER
+    "wind_heading" : 4, //measure[4] A UTILISER
+    "wind_speed_avg" : 5, //measure[5] A UTILISER
+    "wind_speed_max" : 6, //measure[6] A UTILISER
+    "wind_speed_min" : 7 //measure[7] A UTILISER
 };
 
 //Pour la vraie sonde, on que la date, la temperature, l'hygro et la pression
+const realSondUnitKeys = {
+    "temp": "C",
+    "hygro": "%",
+    "press": "hP"
+};
 
-// Watcher pour regarder les fichiers où sont mis les résultats des sondes
-function initializeWatcher(mode) {
-    var url;
-    if (mode == "mock") { url = urlMockData}
-    else { url = urlRealData};
+const realSondKeys = {
+    "temp": "temperature",
+    "hygro": "pressure",
+    "press": "humidity"
+};
 
-    const watcher = chokidar.watch(url);
+["temp", "hygro", "press"]
 
-    return watcher
-}
-
-
-
-//
 async function loadingFile(path) {
     try {
         const data = await fs.readFile(path, { enconding: 'utf8'});
@@ -92,55 +80,64 @@ async function setUpDatabase() {
 };
 
 
-// Insertion de la donnée d'un fichiers dans la bdd
+// Insertion de la donnchokidar.watch(path)ée d'un fichiers dans la bdd
 async function insertData(path) {
     const client = new MongoClient(urlDb);
-    // Pick the file
-    const measureFile = await loadingFile(path+"");
+    const file = await loadingFile(path);
 
     await client.connect();
     const db = client.db(dbName);
 
-    // Pour chaque variable, on insère dans la collection correspondante
-    for (const dataType in fakeSondKeys) {
-        const collection = db.collection(dataType);
-        const insertResult = await collection.insertOne({"date": measureFile.date, "measures": measureFile.measure[fakeSondKeys[dataType]]});
-        console.log('Inserted measurements =>', insertResult);
+    if (path == "/dev/shm/sensors") {
+        console.log("change on fakeSond file");
+        // Pour chaque variable, on insère dans la collection correspondante
+        for (const dataType in fakeSondKeys) {
+            const collection = db.collection(dataType);
+            const insertResult = await collection.insertOne({
+                "date": file.date, 
+                "measures": file.measure[fakeSondKeys[dataType]]
+            });
+            console.log('Inserted measurements =>', insertResult);
+        }
     }
-    // On insère les données pour l'hydrométrie
-    // const collection = db.collection("rain");
-    // const insertResult = await collection.insertOne(file.rain);
-    // console.log('Inserted measurements =>', insertResult);
-    // On insère les données pour la trace gps
-
+    else if (path == "/dev/shm/gpsNmea") {
+        console.log("change on gps file");
+        const collection = db.collection("gps");
+        const insertResult = await collection.insertOne(file);
+        console.log('Inserted gps position =>', insertResult);
+    }
+    else if (path == "/dev/shm/rainCounter.log") {
+        console.log("change on rainCounter file");
+        const collection = db.collection("rain");
+        const insertResult = await collection.insertOne(file);
+        console.log('Inserted gps position =>', insertResult);
+    }
+    else if (path == "/dev/shm/tph.log") {
+        console.log("change on realSond file");
+        for (const dataType in realSondKeys) {
+            const collection = db.collection(realSondKeys[dataType]);
+            const insertResult = await collection.insertOne({
+                "date": file.date,
+                "measures": {"unit":realSondUnitKeys[dataType], "value": file[dataType]}
+            });
+        }
+        const collection = db.collection("rain");
+        const insertResult = await collection.insertOne(file);
+        console.log('Inserted gps position =>', insertResult);
+    }
 
     await client.close()
     return "done";
 };
 
-async function showData() {
-    const client = new MongoClient(urlDb);
-    try {
-        await client.connect();
-        const db = client.db(dbName);
-        
-        const result = await db.collection("luminosity").find().toArray();
-        console.log(result);
-        
-    } catch (err) {
-        console.error('Error showing data:', err);
-    } finally {
-        await client.close();
-    }
-};
+
 
 
 function launchScrapper(mode="mock") {
-    setUpDatabase();
-    const watcher = initializeWatcher(mode);
-    watcher
+    const watcherDev = chokidar.watch("/dev/shm");
+    
+    watcherDev
         .on('change', (path) => {
-            console.log("change on file")
             insertData(path)
         })
 };
