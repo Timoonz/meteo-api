@@ -6,23 +6,13 @@ import fs from 'node:fs/promises';
 import chokidar from 'chokidar';
 
 const urlMockData = "/dev/shm/sensors";
-const urlRealData = "";
+const urlRealData = "/dev/shm/";
 
 
 const MONGO_HOST = process.env.MONGO_HOST || 'localhost';
 const urlDb = `mongodb://${MONGO_HOST}:27017`;
 const dbName = 'meteo';
 
-// Watcher pour regarder les fichiers où sont mis les résultats des sondes
-function initializeWatcher(mode) {
-    var url;
-    if (mode == "mock") { url = urlMockData}
-    else { url = urlRealData};
-
-    const watcher = chokidar.watch(url);
-
-    return watcher
-}
 
 /*Pour FakeSond
     temperature => measure[0]
@@ -46,6 +36,21 @@ const fakeSondKeys = {
     "wind_speed_min" : 7
 };
 
+//Pour la vraie sonde, on que la date, la temperature, l'hygro et la pression
+
+// Watcher pour regarder les fichiers où sont mis les résultats des sondes
+function initializeWatcher(mode) {
+    var url;
+    if (mode == "mock") { url = urlMockData}
+    else { url = urlRealData};
+
+    const watcher = chokidar.watch(url);
+
+    return watcher
+}
+
+
+
 //
 async function loadingFile(path) {
     try {
@@ -64,11 +69,16 @@ async function setUpDatabase() {
         await client.connect();
         const db = client.db(dbName);
 
-        //On crée une collection par type de données
+        // On crée une collection par type de données
         for (const dataType in fakeSondKeys) {
             // console.log(dataType);
             await db.createCollection(dataType);
         }
+        // On crée une collection pour la pluie
+        await db.createCollection("rain");
+        // On crée une collection pour le gps
+        await db.createCollection("gps");
+
     } catch (err) {
         console.error('Error setting up database:', err);
     } finally {
@@ -86,17 +96,23 @@ async function setUpDatabase() {
 async function insertData(path) {
     const client = new MongoClient(urlDb);
     // Pick the file
-    const file = await loadingFile(path);
+    const measureFile = await loadingFile(path+"");
 
     await client.connect();
     const db = client.db(dbName);
 
+    // Pour chaque variable, on insère dans la collection correspondante
     for (const dataType in fakeSondKeys) {
-        //pour chaque variable, on insère dans la collection correspondante
         const collection = db.collection(dataType);
-        const insertResult = await collection.insertOne(file.measure[fakeSondKeys[dataType]]);
-        console.log('Inserted documents =>', insertResult);
+        const insertResult = await collection.insertOne({"date": measureFile.date, "measures": measureFile.measure[fakeSondKeys[dataType]]});
+        console.log('Inserted measurements =>', insertResult);
     }
+    // On insère les données pour l'hydrométrie
+    // const collection = db.collection("rain");
+    // const insertResult = await collection.insertOne(file.rain);
+    // console.log('Inserted measurements =>', insertResult);
+    // On insère les données pour la trace gps
+
 
     await client.close()
     return "done";
