@@ -32,12 +32,6 @@ async function loadData(params) {
             const measure = {"unit": data[0].measures.unit, "value": data[0].measures.value};
             results["measurements"][param] = measure;
         }
-
-        
-    
-        // results.date = data.date;
-        // results.location = "";
-        // console.log(results);
         return results;
     }  catch (err) {
         console.error('Error importing data:', err);
@@ -54,7 +48,7 @@ router.get('/', async (req, res) => {
         if (!data) {
             return res.status(400).json({
                 error_code: 400,
-                error_message: "Invalid query parameter"
+                error_message: "Invalid query parameter: data is required"
             })
         }
 
