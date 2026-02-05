@@ -32,12 +32,17 @@ const realSondUnitKeys = {
 
 const realSondKeys = {
     "temp": "temperature",
-    "hygro": "pressure",
-    "press": "humidity"
+    "hygro": "humidity",
+    "press": "pressure"
 };
 
 // Fonction pour parser la première ligne du fichier gpsNmea
 function parseGPS(gpsFile) {
+    if (!gpsFile) {
+        console.error('GPS file is null or empty');
+        return { lat: null, long: null };
+    }
+    
     const lines = gpsFile.split("\n");
     let lat = null;
     let long = null;
@@ -50,10 +55,13 @@ function parseGPS(gpsFile) {
                 break;
             }
         }
+        if (lat === null || long === null) {
+            console.warn('No valid GPS coordinates found in file');
+        }
         return {"lat": lat, "long": long};
     } catch(error) {
         console.error('Error parsing NMEA sentence:', error);
-        return null;
+        return {"lat": null, "long": null};
     }
 }
 
