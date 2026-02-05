@@ -31,6 +31,7 @@ async function loadData(params) {
     }
 }
 
+// Le routeur pour meteo/v1/live
 router.get('/', (req, res) => {
     try {
         const  { data } = req.query;

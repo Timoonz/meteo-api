@@ -1,6 +1,6 @@
 services:
   mongodb:
-    image: mongo:7
+    image: mongo:4.4.18
     container_name: meteo-mongodb
     ports:
       - "27017:27017"
@@ -27,7 +27,7 @@ services:
     networks:
       - meteo-network
     volumes:
-      - /dev/shm/sensors:/dev/shm/sensors
+      - /dev/shm/:/dev/shm/
     restart: unless-stopped
 
   api:
@@ -35,6 +35,8 @@ services:
       context: .
       dockerfile: Dockerfile.api
     container_name: meteo-api
+    ports:
+      - "3000:3000"
     environment:
       - MONGO_HOST=mongodb
     depends_on:
