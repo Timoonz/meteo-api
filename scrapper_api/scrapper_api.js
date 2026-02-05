@@ -13,7 +13,7 @@ const MONGO_HOST = process.env.MONGO_HOST || 'localhost';
 const urlDb = `mongodb://${MONGO_HOST}:27017`;
 const dbName = 'meteo';
 
-// Watcher pour regarder les fichiers iù sont mis les résultats des sondes
+// Watcher pour regarder les fichiers où sont mis les résultats des sondes
 function initializeWatcher(mode) {
     var url;
     if (mode == "mock") { url = urlMockData}
@@ -108,7 +108,6 @@ async function showData() {
         await client.connect();
         const db = client.db(dbName);
         
-        // Use await instead of callback
         const result = await db.collection("luminosity").find().toArray();
         console.log(result);
         

@@ -8,6 +8,11 @@ services:
       - meteo-network
     volumes:
       - mongodb_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   scrapper:
     build:
@@ -16,12 +21,22 @@ services:
     container_name: meteo-scrapper
     environment:
       - MONGO_HOST=mongodb
+    depends_on:
+      mongodb:
+        condition: service_healthy
     networks:
       - meteo-network
     volumes:
       - /dev/shm/sensors:/dev/shm/sensors
     restart: unless-stopped
 
+  api:
+    build: 
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: meteo-api
+    environment:
+      - MONGO_HOST=mongodb
 networks:
   meteo-network:
     driver: bridge
