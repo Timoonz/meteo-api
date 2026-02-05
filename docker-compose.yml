@@ -1,0 +1,55 @@
+services:
+  mongodb:
+    image: mongo:4.4.18
+    container_name: meteo-mongodb
+    ports:
+      - "27017:27017"
+    networks:
+      - meteo-network
+    volumes:
+      - mongodb_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongo", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  scrapper:
+    build:
+      context: .
+      dockerfile: Dockerfile.scrapper
+    container_name: meteo-scrapper
+    environment:
+      - MONGO_HOST=mongodb
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - meteo-network
+    volumes:
+      - /dev/shm/:/dev/shm/
+    restart: unless-stopped
+
+  api:
+    build: 
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: meteo-api
+    ports:
+      - "3000:3000"
+    environment:
+      - MONGO_HOST=mongodb
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - meteo-network
+
+
+
+networks:
+  meteo-network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
