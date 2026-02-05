@@ -1,6 +1,6 @@
 services:
   mongodb:
-    image: mongo:latest
+    image: mongo:7
     container_name: meteo-mongodb
     ports:
       - "27017:27017"
@@ -37,6 +37,14 @@ services:
     container_name: meteo-api
     environment:
       - MONGO_HOST=mongodb
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - meteo-network
+
+
+
 networks:
   meteo-network:
     driver: bridge
