@@ -5,13 +5,11 @@ const {MongoClient} = require('mongodb');
 import fs from 'node:fs/promises';
 import chokidar from 'chokidar';
 
-const urlMockData = "/dev/shm/sensors";
-const urlRealData = "/dev/shm/";
-
+const nmea = require('nmea-simple');
 
 const MONGO_HOST = process.env.MONGO_HOST || 'localhost';
-const urlDb = `mongodb://${MONGO_HOST}:27017`;
-const dbName = 'meteo';
+const URLDB = `mongodb://${MONGO_HOST}:27017`;
+const DBNAME = 'meteo';
 
 
 const fakeSondKeys = {
@@ -38,27 +36,50 @@ const realSondKeys = {
     "press": "humidity"
 };
 
-async function loadingFile(path) {
+// Fonction pour parser la première ligne du fichier gpsNmea
+function parseGPS(gpsFile) {
+    const lines = gpsFile.split("\n");
+    let lat = null;
+    let long = null;
     try {
-        const data = await fs.readFile(path, { enconding: 'utf8'});
-        return JSON.parse(data);
+        for (const line of lines){
+            if (line.startsWith('$GPGGA')) {
+                const packet = nmea.parseNmeaSentence(line);
+                lat = packet.latitude;
+                long = packet.longitude;
+                break;
+            }
+        }
+        return {"lat": lat, "long": long};
+    } catch(error) {
+        console.error('Error parsing NMEA sentence:', error);
+        return null;
+    }
+}
+
+// Fonction pour load les fichiers
+async function loadingFile(path, isText = false) {
+    try {
+        const data = await fs.readFile(path, { encoding: 'utf8'}); // Fix typo
+        return isText ? data : JSON.parse(data);
     }
     catch (err) {
-        return err;
+        console.error(`Error loading file ${path}:`, err);
+        return null;
     }
 };
 
 
 // Insertion de la donnée d'un fichiers dans la bdd
 async function insertData(path) {
-    const client = new MongoClient(urlDb);
+    const client = new MongoClient(URLDB);
     const fakeSondfile = await loadingFile("/dev/shm/sensors");
-    const gpsFile = await loadingFile("/dev/shm/gpsNmea");
+    const gpsFile = await loadingFile("/dev/shm/gpsNmea", true);
     const rainFile = await loadingFile("/dev/shm/rainCounter.log");
     const realSondFile = await loadingFile("/dev/shm/tph.log");
 
     await client.connect();
-    const db = client.db(dbName);
+    const db = client.db(DBNAME);
     const collection = db.collection("meteo")
 
     // On insère la date
@@ -67,8 +88,9 @@ async function insertData(path) {
     }
 
     // On insère les données du gps
-    result["lat"] = "lat" //
-    result["long"] = "long" //
+    const gpsCoord = parseGPS(gpsFile);
+    result["lat"] = gpsCoord.lat; //
+    result["long"] = gpsCoord.long; //
 
     // On insère les données de la vraie sonde
     for (const dataType in realSondKeys) {
