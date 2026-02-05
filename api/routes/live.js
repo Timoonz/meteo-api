@@ -21,10 +21,22 @@ async function loadData(params) {
 
         const results = {};
 
+        // On se sert du premier fichier pour afficher la date et la location
+        const firstData = await db.collection(params[0]).find().sort({_id: -1}).limit(1).toArray();
+        results["date"] = firstData[0].date;
+        results["location"] = "location";
+        results["measurements"] = {};
+
         for (const param of params) {
             const data = await db.collection(param).find().sort({_id: -1}).limit(1).toArray();
-            results[param] = data.length > 0 ? data[0] : null;
+            const measure = {"unit": data[0].measures.unit, "value": data[0].measures.value};
+            results["measurements"][param] = measure;
         }
+
+        
+    
+        // results.date = data.date;
+        // results.location = "";
         // console.log(results);
         return results;
     }  catch (err) {
